@@ -83,7 +83,7 @@ static void turnOffPWM(uint8_t timer)
   }
 }
 
-// val = LOW, output low; val = HIGH, input
+// val = LOW, output low (Sink); val = HIGH, input with pull-up
 int digitalOpenDran(uint8_t pin, uint8_t val) {
 
   uint8_t timer = digitalPinToTimer(pin);
@@ -105,9 +105,12 @@ int digitalOpenDran(uint8_t pin, uint8_t val) {
 
   *out &= ~bit;
   if (val == LOW) {
+    *out &= ~bit;
     *reg |= bit;
   } else {
-    *reg &= ~bit;
+    // *reg &= ~bit; // Esta posição evita conflito de estado.
+    *out |= bit;
+    *reg &= ~bit;    // BUG: Pesquisar se falta resistor de pull-up.
   }
 
   SREG = oldSREG;
@@ -297,8 +300,8 @@ void acWireClass::closeTransaction() {
   delayMicroseconds(period);      // Período de acomadação do escravo.
   digitalOpenDran(pinSCL, HIGH);  // Clock alto: intervalo de reconhecimento de ação.
   delayMicroseconds(period);      // Período de latência para o sinal de encerramento.
-  /* BUG: Não fecha se não tiver esta linha. */
-  digitalWrite(pinSDA, HIGH);     
+  /* BUG: Não fecha a comunicação se não tiver esta linha. */
+  // digitalWrite(pinSDA, HIGH);
   /**/
   digitalOpenDran(pinSDA, HIGH);  // SDA alto após Clock alto indica encerramento.
   delayMicroseconds(period);      // Período de latência para o sinal de encerramento.
