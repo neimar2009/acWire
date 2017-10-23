@@ -10,13 +10,10 @@
 #define ACK      0
 #define NOACK    1
 
-#define SDA_WRITE_BIT(_pin, _bit)  {digitalWrite((_pin), (_bit & 0x80) ? HIGH : LOW); }
-#define SDA_READ_BIT(_pin, _byte)  {digitalRead((_pin)) ? _byte |= 1: _byte &= 0xFE;  }
-
 int digitalOpenDran(uint8_t pin, uint8_t val);
 
-// #define SDA_WRITE_BIT(_pin, _bit)  {digitalOpenDran((_pin), (_bit & 0x80) ? HIGH : LOW); }
-// #define SDA_READ_BIT(_pin, _byte)  {digitalOpenDran((_pin), (HIGH)) ? _byte |= 1: _byte &= 0xFE; }
+#define SDA_WRITE_BIT(_pin, _bit)  {digitalOpenDran((_pin), (_bit & 0x80) ? HIGH : LOW); }
+#define SDA_READ_BIT(_pin, _byte)  {digitalOpenDran((_pin), (HIGH)) ? _byte |= 1: _byte &= 0xFE; }
 
 #define TWI_CLOCK_LIMIT      400000  // 400kHz
 #define TWI_PERIOD          ((uint32_t)(((1/TWI_CLOCK_LIMIT)/2) * 1000000))
@@ -94,7 +91,7 @@ int digitalOpenDran(uint8_t pin, uint8_t val) {
   uint8_t port = digitalPinToPort(pin);
   volatile uint8_t *reg, *out;
 
-  if (port == NOT_A_PIN) return;
+  if (port == NOT_A_PIN) return LOW;
 
   // If the pin that support PWM output, we need to turn it off
   // before doing a digital write.
@@ -114,10 +111,8 @@ int digitalOpenDran(uint8_t pin, uint8_t val) {
   }
 
   SREG = oldSREG;
-  if(val == HIGH){
-    return digitalRead(pin);      
-  }
-  return 0;
+  if((val == HIGH) && (*portInputRegister(port) & bit)) return HIGH;
+  return LOW;
 }
 
 /*********************************************************************************/
@@ -127,14 +122,14 @@ uint8_t acWireClass::TWI_readBit(uint8_t data) {
   // SCL  ___/ \_
   //      _ _____
   // SDA  _X_____
-
+  //
   data <<= 1;                       // Desloca data para esquerda...
-  pinMode(pinSDA, INPUT);         // Configura porta para o estado de leitura.
+  digitalOpenDran(pinSDA, HIGH);    // <- Mesmo que 'pinMode(pinSDA, INPUT)'
   delayMicroseconds(period);        // Período de preparação do bit que o escravo vai enviar.
-  digitalWrite(pinSCL, HIGH);     // Acionamento do período de leitura pelo master.
+  digitalOpenDran(pinSCL, HIGH);    // open-dran
   delayMicroseconds(period);        // Período de leitura.
   SDA_READ_BIT(pinSDA, data);       // Rotina de leitura do bit enviado pelo escravo.
-  digitalWrite(pinSCL, LOW);      // Termina o período evitando leituras falsas.
+  digitalOpenDran(pinSCL, LOW);
 
   return data;                      // Retorna data prepara para a próxima leitura.
 }
@@ -144,13 +139,12 @@ uint8_t acWireClass::TWI_writeBit(uint8_t data) {
   // SCL  ___/ \_
   //      _ _____
   // SDA  _X_____
-
-  pinMode(pinSDA, OUTPUT);      // Configura porta para o estado de escrita.
+  //
   SDA_WRITE_BIT(pinSDA, data);  // Rotina de escrita do bit para leitura pelo escravo.
   delayMicroseconds(period);    // Período de estabilização do bit que será lido pelo escravo.
-  digitalWrite(pinSCL, HIGH);   // Ativação do período de leitura.
+  digitalOpenDran(pinSCL, HIGH);
   delayMicroseconds(period);    // Período de leitura do bit pelo escravo.
-  digitalWrite(pinSCL, LOW);    // Termina o período evitando leituras falsas.
+  digitalOpenDran(pinSCL, LOW);
   data <<= 1;                   // Desloca data para esquerda...
 
   return data;                  // Retorna data prepara para a próxima escrita.
@@ -164,11 +158,8 @@ acWireClass::acWireClass(uint8_t pinSDA, uint8_t pinSCL, boolean mode = true)
   period = TWI_PERIOD;   // <- Meio período definico para 400kHz.
   if(!mode) period *= 4; // <- para 'mode' de baixa velocidade 100kHz
 
-  // TODO: Buscar configuração de coletor aberto.
-  pinMode(pinSDA, OUTPUT);
-  digitalWrite(pinSDA, HIGH);
-  pinMode(pinSCL, OUTPUT);
-  digitalWrite(pinSCL, HIGH);
+  digitalOpenDran(pinSDA, HIGH);
+  digitalOpenDran(pinSCL, HIGH);
 }
 
 void acWireClass::begin(uint8_t slave) {
@@ -207,11 +198,6 @@ uint8_t acWireClass::read(uint8_t* data, uint8_t len) {
   //  Reading
   uint8_t d = 0;
   while (d < len) {
-    // if(inMuiltiTransaction) {
-    //   data[d] = receiveByte(d == (len-1) && modeACK);
-    // } else {
-    //   data[d] = receiveByte(d == (len-1));
-    // }
     data[d] = receiveByte(d == (len-1) && modeACK);
     d++;
   }
@@ -291,13 +277,14 @@ uint8_t acWireClass::writeEnd(uint8_t data) {
 
 void acWireClass::openTransaction() {
   //      __
-  // SCL  _ \_
+  // SCL    \_
+  //      _
   // SDA   \__
   //
-  pinMode(pinSDA, OUTPUT);      // (Não necessário) Configura porta para o estado de escrita.
-  digitalWrite(pinSDA, LOW);                  // Indica iníco de operação.
-  delayMicroseconds(period);         // Tempo de identificação de início.
-  digitalWrite(pinSCL, LOW);                  // Indica iníco de operação.
+  digitalOpenDran(pinSDA, LOW);     // Indica iníco de operação.
+  delayMicroseconds(period);        // Tempo de identificação de início.
+  digitalOpenDran(pinSCL, LOW);     // Indica iníco de operação.
+  delayMicroseconds(period);        // Tempo de identificação de início.
 }
 
 void acWireClass::closeTransaction() {
@@ -306,12 +293,14 @@ void acWireClass::closeTransaction() {
   //      _   _
   // SDA  _\_/
   //
-  pinMode(pinSDA, OUTPUT);        // Ativa escrita em pinSDA.
-  digitalWrite(pinSDA, LOW);      // Leva SDA para baixo.
+  digitalOpenDran(pinSDA, LOW);   // Leva SDA para baixo.
   delayMicroseconds(period);      // Período de acomadação do escravo.
-  digitalWrite(pinSCL, HIGH);     // Clock alto: intervalo de reconhecimento de ação.
+  digitalOpenDran(pinSCL, HIGH);  // Clock alto: intervalo de reconhecimento de ação.
   delayMicroseconds(period);      // Período de latência para o sinal de encerramento.
-  digitalWrite(pinSDA, HIGH);     // SDA alto após Clock alto indica encerramento.
+  /* BUG: Não fecha se não tiver esta linha. */
+  digitalWrite(pinSDA, HIGH);     
+  /**/
+  digitalOpenDran(pinSDA, HIGH);  // SDA alto após Clock alto indica encerramento.
   delayMicroseconds(period);      // Período de latência para o sinal de encerramento.
 }
 
@@ -321,11 +310,9 @@ void acWireClass::reopenTransaction() {
   //      _ ___
   // SDA  _/
   //
-  pinMode(pinSDA, OUTPUT);        // Configura porta para o estado de escrita.
-  digitalWrite(pinSDA, HIGH);     // Prepara SDA para o sinal de reabertura.
-  digitalOpenDran(pinSDA, HIGH);
+  digitalOpenDran(pinSDA, HIGH);  // Prepara SDA para o sinal de reabertura.
   delayMicroseconds(period);      // Tempo de identificação de estado.
-  digitalWrite(pinSCL, HIGH);     // Indica operação de reabertura.
+  digitalOpenDran(pinSCL, HIGH);  // Indica operação de reabertura.
   delayMicroseconds(period);      // Tempo de identificação de início.
   openTransaction();              // Conclui a reabertura.
 }
