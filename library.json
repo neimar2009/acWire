@@ -1,0 +1,16 @@
+{
+  "name": "acWire",
+  "keywords": "Uncategorized",
+  "description": "Biblioteca para comunicação I2C, com novos recursos, adaptado para funcionamento em ATtiny85 e equivalentes.",
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/neimar2009/acWire"
+  },
+  "version": "0.0.1",
+  "frameworks": ["arduino"],
+  "platforms": [
+    "Arduino",
+    "avr"
+  ]
+}
