@@ -1,4 +1,7 @@
-// acWire.cpp
+/*
+ * Copyright (c) 2017 by Acácio Neimar de Oliveira <neimar2009@gmail.com>
+ * acWire.cpp
+ */
 
 #include <Arduino.h>
 #include "acWire.h"
@@ -117,8 +120,8 @@ uint8_t digitalOpenDran(uint8_t pin, uint8_t val) {
     *reg |=  bit;
   } else {
     *reg &= ~bit;
-    *out |=  bit;
-    ret = (*(reg - 1) & bit); // portInputRegister(port);
+    *out |=  bit;   // This position avoids conflict of state.
+    ret = (*(reg - 1) & bit); // (reg -1 ) == portInputRegister(port);
   }
 
   SREG = oldSREG;
@@ -186,7 +189,7 @@ acWireClass::acWireClass(uint8_t pinSDA, uint8_t pinSCL, boolean mode = true)
 
 void acWireClass::begin(uint8_t slave) {
 
-  slaveID = slave <<= 1;
+  slaveID = slave <<= 1; // Desloca um para combinar com o bit de leitura ou escrita.
 }
 
 /*  Reads data  ******************************************/

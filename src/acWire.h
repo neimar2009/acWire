@@ -1,4 +1,7 @@
-// acWire.h
+/*
+ * Copyright (c) 2017 by Acácio Neimar de Oliveira <neimar2009@gmail.com>
+ * acWire.h
+ */
 
 class acWireClass {
 public:
