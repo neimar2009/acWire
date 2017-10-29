@@ -2,7 +2,8 @@
 
 class acWireClass {
 public:
-  acWireClass(uint8_t pinSDA, uint8_t pinSCL, boolean mode = true); // mode is 100kHz or 400kHz; false or true.
+  // mode is 100kHz or 400kHz; false or true.
+  acWireClass(uint8_t pinSDA, uint8_t pinSCL, boolean mode = true);
   ~acWireClass() {};
   void begin(uint8_t slave);
   uint8_t readBegin(uint8_t* data, uint8_t len);
@@ -21,7 +22,7 @@ private:
   uint8_t slaveID = 0;
   uint8_t pinSDA;
   uint8_t pinSCL;
-  uint8_t period;
+  uint8_t periodHalf;
   uint8_t inMuiltiTransaction = 0;
   uint8_t modeACK = 1; //<- NOACK
   uint8_t flagI2C = 0; //<- writeI2C
@@ -30,12 +31,12 @@ private:
   void openTransaction();
   void closeTransaction();
   void reopenTransaction();
+  void releaseSDA();
   bool beginMultiTransactions(uint8_t Rw);
   void endMultiTransactions();
   bool sendHeader(uint8_t Rw);
   bool sendByte(uint8_t b);
   uint8_t receiveByte(uint8_t ack);
-  // bool getACK();
-  // void setACK(uint8_t ack);
+
 };
 

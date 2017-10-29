@@ -1,8 +1,6 @@
 // acWire.cpp
 
 #include <Arduino.h>
-#include <wiring_private.h>
-
 #include "acWire.h"
 
 #define writeI2C 0
@@ -10,16 +8,16 @@
 #define ACK      0
 #define NOACK    1
 
-int digitalOpenDran(uint8_t pin, uint8_t val);
+uint8_t digitalOpenDran(uint8_t pin, uint8_t val);
 
 #define SDA_WRITE_BIT(_pin, _bit)  {digitalOpenDran((_pin), (_bit & 0x80) ? HIGH : LOW); }
 #define SDA_READ_BIT(_pin, _byte)  {digitalOpenDran((_pin), (HIGH)) ? _byte |= 1: _byte &= 0xFE; }
 
-#define TWI_CLOCK_LIMIT      400000  // 400kHz
-#define TWI_PERIOD          ((uint32_t)(((1/TWI_CLOCK_LIMIT)/2) * 1000000))
+#define TWI_CLOCK_LIMIT            400000  // 400kHz
+#define TWI_PERIOD_HALF            ((uint32_t)(((1/TWI_CLOCK_LIMIT)/2) * 1000000))
 
 /*********************************************************************************/
-
+/*
 static void turnOffPWM(uint8_t timer)
 {
   switch (timer)
@@ -84,7 +82,7 @@ static void turnOffPWM(uint8_t timer)
 }
 
 // val = LOW, output low (Sink); val = HIGH, input with pull-up
-int digitalOpenDran(uint8_t pin, uint8_t val) {
+uint8_t digitalOpenDran(uint8_t pin, uint8_t val) {
 
   uint8_t timer = digitalPinToTimer(pin);
   uint8_t bit = digitalPinToBitMask(pin);
@@ -98,42 +96,66 @@ int digitalOpenDran(uint8_t pin, uint8_t val) {
   if (timer != NOT_ON_TIMER) turnOffPWM(timer);
 
   reg = portModeRegister(port);
-  out = portOutputRegister(port);
+  out = reg + 1; //portOutputRegister(port);
 
+  uint8_t ret = LOW;
   uint8_t oldSREG = SREG;
   cli();
 
-  *out &= ~bit;
+    // \
+    |      |        |    PUD     |         |         |                                             \
+    | DDxn | PORTxn | (in MCUCR) |   I/O   | Pull-up | Comment                                     \
+    |------+--------+------------+---------+---------+---------------------------------------------\
+    |  0   |   0    |     X      |  Input  |   No    | Tri-state (Hi-Z)                            \
+    |  0   |   1    |     0      |  Input  |   Yes   | Pxn will source current if ext. pulled low. \
+    |  0   |   1    |     1      |  Input  |   No    | Tri-state (Hi-Z)                            \
+    |  1   |   0    |     X      |  Output |   No    | Output Low (Sink)                           \
+    |  1   |   1    |     X      |  Output |   No    | Output High (Source)                        |
+
   if (val == LOW) {
-    *out &= ~bit;
-    *reg |= bit;
+    *out &= ~bit;   // This position avoids conflict of state.
+    *reg |=  bit;
   } else {
-    // *reg &= ~bit; // Esta posição evita conflito de estado.
-    *out |= bit;
-    *reg &= ~bit;    // BUG: Pesquisar se falta resistor de pull-up.
+    *reg &= ~bit;
+    *out |=  bit;
+    ret = (*(reg - 1) & bit); // portInputRegister(port);
   }
 
   SREG = oldSREG;
-  if((val == HIGH) && (*portInputRegister(port) & bit)) return HIGH;
+  return ret;
+}
+*/
+
+// val = LOW, output low (Sink); val = HIGH, input with pull-up
+uint8_t digitalOpenDran(uint8_t pin, uint8_t val) {
+
+  if (val == LOW) {
+    digitalWrite(pin, LOW);
+    pinMode(pin, OUTPUT);
+  } else {
+    pinMode(pin, INPUT);
+    digitalWrite(pin, HIGH);
+    if (digitalRead(pin)) return HIGH;
+  }
   return LOW;
 }
+
 
 /*********************************************************************************/
 
 uint8_t acWireClass::TWI_readBit(uint8_t data) {
-  //          _
-  // SCL  ___/ \_
-  //      _ _____
-  // SDA  _X_____
+  //          __
+  // SCL  ___/  \_
+  //      _ .. ___
+  // SDA  _X..X___
   //
   data <<= 1;                       // Desloca data para esquerda...
   digitalOpenDran(pinSDA, HIGH);    // <- Mesmo que 'pinMode(pinSDA, INPUT)'
-  delayMicroseconds(period);        // Período de preparação do bit que o escravo vai enviar.
+  delayMicroseconds(periodHalf);    // Período de preparação do bit que o escravo vai enviar.
   digitalOpenDran(pinSCL, HIGH);    // open-dran
-  delayMicroseconds(period);        // Período de leitura.
+  delayMicroseconds(periodHalf);    // Período de leitura.
   SDA_READ_BIT(pinSDA, data);       // Rotina de leitura do bit enviado pelo escravo.
-  digitalOpenDran(pinSCL, LOW);
-
+  digitalOpenDran(pinSCL, LOW);     // Clock baixo, fim da leitura.
   return data;                      // Retorna data prepara para a próxima leitura.
 }
 
@@ -144,12 +166,11 @@ uint8_t acWireClass::TWI_writeBit(uint8_t data) {
   // SDA  _X_____
   //
   SDA_WRITE_BIT(pinSDA, data);  // Rotina de escrita do bit para leitura pelo escravo.
-  delayMicroseconds(period);    // Período de estabilização do bit que será lido pelo escravo.
+  delayMicroseconds(periodHalf);    // Período de estabilização do bit que será lido pelo escravo.
   digitalOpenDran(pinSCL, HIGH);
-  delayMicroseconds(period);    // Período de leitura do bit pelo escravo.
+  delayMicroseconds(periodHalf);    // Período de leitura do bit pelo escravo.
   digitalOpenDran(pinSCL, LOW);
   data <<= 1;                   // Desloca data para esquerda...
-
   return data;                  // Retorna data prepara para a próxima escrita.
 }
 
@@ -158,11 +179,9 @@ uint8_t acWireClass::TWI_writeBit(uint8_t data) {
 acWireClass::acWireClass(uint8_t pinSDA, uint8_t pinSCL, boolean mode = true)
   : pinSDA(pinSDA), pinSCL(pinSCL) {
 
-  period = TWI_PERIOD;   // <- Meio período definico para 400kHz.
-  if(!mode) period *= 4; // <- para 'mode' de baixa velocidade 100kHz
-
-  digitalOpenDran(pinSDA, HIGH);
-  digitalOpenDran(pinSCL, HIGH);
+  periodHalf = TWI_PERIOD_HALF;   // <- Meio período definico para 400kHz.
+  if(!mode) periodHalf *= 4; // <- para 'mode' de baixa velocidade 100kHz
+  releaseSDA();
 }
 
 void acWireClass::begin(uint8_t slave) {
@@ -284,10 +303,11 @@ void acWireClass::openTransaction() {
   //      _
   // SDA   \__
   //
-  digitalOpenDran(pinSDA, LOW);     // Indica iníco de operação.
-  delayMicroseconds(period);        // Tempo de identificação de início.
-  digitalOpenDran(pinSCL, LOW);     // Indica iníco de operação.
-  delayMicroseconds(period);        // Tempo de identificação de início.
+  releaseSDA();
+  digitalOpenDran(pinSDA, LOW);           // Indica iníco de operação.
+  delayMicroseconds(periodHalf);          // Tempo de identificação de início.
+  digitalOpenDran(pinSCL, LOW);           // Indica iníco de operação.
+  delayMicroseconds(periodHalf);          // Tempo de identificação de início.
 }
 
 void acWireClass::closeTransaction() {
@@ -296,28 +316,39 @@ void acWireClass::closeTransaction() {
   //      _   _
   // SDA  _\_/
   //
-  digitalOpenDran(pinSDA, LOW);   // Leva SDA para baixo.
-  delayMicroseconds(period);      // Período de acomadação do escravo.
-  digitalOpenDran(pinSCL, HIGH);  // Clock alto: intervalo de reconhecimento de ação.
-  delayMicroseconds(period);      // Período de latência para o sinal de encerramento.
-  /* BUG: Não fecha a comunicação se não tiver esta linha. */
-  // digitalWrite(pinSDA, HIGH);
-  /**/
-  digitalOpenDran(pinSDA, HIGH);  // SDA alto após Clock alto indica encerramento.
-  delayMicroseconds(period);      // Período de latência para o sinal de encerramento.
+  digitalOpenDran(pinSDA, LOW);           // Leva SDA para baixo.
+  delayMicroseconds(periodHalf);          // Período de acomadação do escravo.
+  while (!digitalOpenDran(pinSCL, HIGH)); // Clock alto: intervalo de reconhecimento de ação.
+  delayMicroseconds(periodHalf);          // Período de latência para o sinal de encerramento.
+  digitalOpenDran(pinSDA, HIGH);          // SDA alto após Clock alto indica encerramento.
+  delayMicroseconds(periodHalf);          // Período de latência para o sinal de encerramento.
+  releaseSDA();
 }
 
 void acWireClass::reopenTransaction() {
-  //          _
-  // SCL  ___/ 
-  //      _ ___
-  // SDA  _/
+  //            _
+  // SCL  _____/ 
+  //      _   ___
+  // SDA  _\_/
   //
-  digitalOpenDran(pinSDA, HIGH);  // Prepara SDA para o sinal de reabertura.
-  delayMicroseconds(period);      // Tempo de identificação de estado.
-  digitalOpenDran(pinSCL, HIGH);  // Indica operação de reabertura.
-  delayMicroseconds(period);      // Tempo de identificação de início.
-  openTransaction();              // Conclui a reabertura.
+  digitalOpenDran(pinSDA, LOW);           // Leva SDA para baixo.
+  delayMicroseconds(periodHalf);          // Período de acomadação do escravo.
+  digitalOpenDran(pinSDA, HIGH);          // Prepara SDA para o sinal de reabertura.
+  delayMicroseconds(periodHalf);          // Tempo de identificação de estado.
+  while (!digitalOpenDran(pinSCL, HIGH)); // Indica operação de reabertura.
+  delayMicroseconds(periodHalf);          // Tempo de identificação de início.
+  openTransaction();                      // Conclui a reabertura.
+}
+
+void acWireClass::releaseSDA() {
+
+  // Espera pela estabilização de SDA.
+  while(!digitalOpenDran(pinSDA, HIGH)) {
+    digitalOpenDran(pinSCL, LOW);         // É ingetado meio período baixo e meio período alto
+    delayMicroseconds(periodHalf);        // para completar um um ciclo. Sem ativida em SDA
+    digitalOpenDran(pinSCL, HIGH);        // que deve permanecer alto (open-dran). Isto faz
+    delayMicroseconds(periodHalf);        // os escravos liberem SDA para trabalho.
+  }
 }
 
 bool acWireClass::beginMultiTransactions(uint8_t Rw) {
