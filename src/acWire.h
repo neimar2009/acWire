@@ -40,6 +40,5 @@ private:
   bool sendHeader(uint8_t Rw);
   bool sendByte(uint8_t b);
   uint8_t receiveByte(uint8_t ack);
-
 };
 

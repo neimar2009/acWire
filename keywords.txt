@@ -11,9 +11,8 @@
 #######################################
 
 acWireClass
-~acWireClass
 begin
-readBegin
+uint8_t readBegin
 read
 readEnd
 writeBegin
