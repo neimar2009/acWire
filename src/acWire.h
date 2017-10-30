@@ -9,6 +9,8 @@ public:
   acWireClass(uint8_t pinSDA, uint8_t pinSCL, boolean mode = true);
   ~acWireClass() {};
   void begin(uint8_t slave);
+  boolean checkOver(uint8_t slave = 0);
+  boolean changeSlave(uint8_t slave = 0);
   uint8_t readBegin(uint8_t* data, uint8_t len);
   uint8_t readBegin();
   uint8_t read(uint8_t* data, uint8_t len);
@@ -23,6 +25,7 @@ public:
   uint8_t writeEnd(uint8_t data);
 private:
   uint8_t slaveID = 0;
+  uint8_t activeSlave = 0;
   uint8_t pinSDA;
   uint8_t pinSCL;
   uint8_t periodHalf;

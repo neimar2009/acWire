@@ -143,7 +143,6 @@ uint8_t digitalOpenDran(uint8_t pin, uint8_t val) {
   return LOW;
 }
 
-
 /*********************************************************************************/
 
 uint8_t acWireClass::TWI_readBit(uint8_t data) {
@@ -168,13 +167,13 @@ uint8_t acWireClass::TWI_writeBit(uint8_t data) {
   //      _ _____
   // SDA  _X_____
   //
-  SDA_WRITE_BIT(pinSDA, data);  // Rotina de escrita do bit para leitura pelo escravo.
+  SDA_WRITE_BIT(pinSDA, data);      // Rotina de escrita do bit para leitura pelo escravo.
   delayMicroseconds(periodHalf);    // Período de estabilização do bit que será lido pelo escravo.
   digitalOpenDran(pinSCL, HIGH);
   delayMicroseconds(periodHalf);    // Período de leitura do bit pelo escravo.
   digitalOpenDran(pinSCL, LOW);
-  data <<= 1;                   // Desloca data para esquerda...
-  return data;                  // Retorna data prepara para a próxima escrita.
+  data <<= 1;                       // Desloca data para esquerda...
+  return data;                      // Retorna data prepara para a próxima escrita.
 }
 
 //== Inicialização ==========================================================
@@ -190,6 +189,23 @@ acWireClass::acWireClass(uint8_t pinSDA, uint8_t pinSCL, boolean mode = true)
 void acWireClass::begin(uint8_t slave) {
 
   slaveID = slave <<= 1; // Desloca um para combinar com o bit de leitura ou escrita.
+  activeSlave = slaveID;
+}
+
+boolean acWireClass::checkOver(uint8_t slave = 0) {
+
+  if (slave) activeSlave = slave;
+  openTransaction();
+  boolean t = sendHeader(readI2C);
+  closeTransaction();
+  if (activeSlave != slaveID) activeSlave = slaveID; // Retorna ao escravo original.
+  
+  return t;
+}
+
+boolean acWireClass::changeSlave(uint8_t slave = 0) {
+
+  (slave) ? activeSlave = slave : activeSlave = slaveID;
 }
 
 /*  Reads data  ******************************************/
@@ -325,7 +341,10 @@ void acWireClass::closeTransaction() {
   delayMicroseconds(periodHalf);          // Período de latência para o sinal de encerramento.
   digitalOpenDran(pinSDA, HIGH);          // SDA alto após Clock alto indica encerramento.
   delayMicroseconds(periodHalf);          // Período de latência para o sinal de encerramento.
-  releaseSDA();
+  releaseSDA();                           // Dá uma sequência de clock até SDA ser alto.
+  if (activeSlave != slaveID) {
+    activeSlave = slaveID;                // Ao fechar uma transação, retorna ao escravo original.
+  }
 }
 
 void acWireClass::reopenTransaction() {
@@ -371,7 +390,7 @@ bool acWireClass::sendHeader(uint8_t Rw) {
 
   if(!inMuiltiTransaction) openTransaction();
 
-  if(!sendByte(slaveID + Rw)){  // Prepara e envia o bit identificador do escravo.
+  if(!sendByte(activeSlave + Rw)) {  // Prepara e envia o bit identificador do escravo.
     closeTransaction();         //<- Em caso de falha força o fim da transação.
     return false;
   }
