@@ -10,14 +10,14 @@
 # Methods and Functions (KEYWORD2)
 #######################################
 
-acWireClass
-begin
-uint8_t readBegin
-read
-readEnd
-writeBegin
-write
-writeEnd
+acWireClass	KEYWORD2
+begin	KEYWORD2
+readBegin	KEYWORD2
+read	KEYWORD2
+readEnd	KEYWORD2
+writeBegin	KEYWORD2
+write	KEYWORD2
+writeEnd	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)
